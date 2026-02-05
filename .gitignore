@@ -127,6 +127,13 @@ ipython_config.py
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
 
+# Files
+elasticsearch-hackathon-winning-strategy.md
+IncidentIQ-Architecture-and-SpecKit-Guide.md
+IncidentIQ-PRD-Complete.md
+IncidentIQ-SpecKit-Prompts-Complete.md
+credentials.txt
+
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid

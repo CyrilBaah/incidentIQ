@@ -1,0 +1,93 @@
+{
+  "index_patterns": ["incidentiq-chat-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "refresh_interval": "30s",
+      "index": {
+        "lifecycle": {
+          "name": "chat-policy",
+          "rollover_alias": "chat"
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "thread_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "channel": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "channel_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "incident_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "messages": {
+          "type": "nested",
+          "properties": {
+            "user": {
+              "type": "keyword",
+              "doc_values": true
+            },
+            "user_id": {
+              "type": "keyword",
+              "doc_values": true
+            },
+            "timestamp": {
+              "type": "date"
+            },
+            "text": {
+              "type": "text",
+              "analyzer": "standard"
+            },
+            "text_embedding": {
+              "type": "dense_vector",
+              "dims": 384,
+              "index": true,
+              "similarity": "cosine"
+            }
+          }
+        },
+        "thread_embedding": {
+          "type": "dense_vector",
+          "dims": 384,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "resolution_found": {
+          "type": "boolean"
+        },
+        "resolution_summary": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "related_services": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "tags": {
+          "type": "keyword",
+          "doc_values": true
+        }
+      }
+    }
+  },
+  "priority": 500,
+  "_meta": {
+    "description": "Index template for Slack/chat thread archives for context",
+    "managed_by": "IncidentIQ",
+    "version": "1.0.0"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "index_patterns": ["incidentiq-metrics-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 1,
+      "refresh_interval": "30s",
+      "index": {
+        "lifecycle": {
+          "name": "metrics-policy",
+          "rollover_alias": "metrics"
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "service": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "environment": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "metric_type": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "cpu_percent": {
+          "type": "float",
+          "doc_values": true
+        },
+        "cpu_cores": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "memory_percent": {
+          "type": "float",
+          "doc_values": true
+        },
+        "memory_used_mb": {
+          "type": "float",
+          "doc_values": true
+        },
+        "memory_total_mb": {
+          "type": "float",
+          "doc_values": true
+        },
+        "disk_io_read_bytes": {
+          "type": "long",
+          "doc_values": true
+        },
+        "disk_io_write_bytes": {
+          "type": "long",
+          "doc_values": true
+        },
+        "network_in_bytes": {
+          "type": "long",
+          "doc_values": true
+        },
+        "network_out_bytes": {
+          "type": "long",
+          "doc_values": true
+        },
+        "request_count": {
+          "type": "long",
+          "doc_values": true
+        },
+        "error_count": {
+          "type": "long",
+          "doc_values": true
+        },
+        "request_latency_p50": {
+          "type": "float",
+          "doc_values": true
+        },
+        "request_latency_p95": {
+          "type": "float",
+          "doc_values": true
+        },
+        "request_latency_p99": {
+          "type": "float",
+          "doc_values": true
+        },
+        "db_connection_pool_active": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "db_connection_pool_idle": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "db_connection_pool_max": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "cache_hit_rate": {
+          "type": "float",
+          "doc_values": true
+        },
+        "queue_depth": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "host": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "labels": {
+          "type": "object",
+          "dynamic": true
+        }
+      }
+    }
+  },
+  "priority": 500,
+  "_meta": {
+    "description": "Index template for system and application metrics",
+    "managed_by": "IncidentIQ",
+    "version": "1.0.0"
+  }
+}

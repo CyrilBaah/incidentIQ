@@ -1,0 +1,21 @@
+{
+  "match": {
+    "indices": "baselines-services",
+    "match_field": "service",
+    "enrich_fields": [
+      "baseline_error_mean",
+      "baseline_error_stddev", 
+      "baseline_error_p95",
+      "baseline_latency_mean",
+      "baseline_latency_stddev",
+      "baseline_latency_p95",
+      "baseline_cpu_mean",
+      "baseline_cpu_stddev",
+      "baseline_memory_mean",
+      "baseline_memory_stddev",
+      "calculation_period_days",
+      "sample_count",
+      "last_calculated"
+    ]
+  }
+}

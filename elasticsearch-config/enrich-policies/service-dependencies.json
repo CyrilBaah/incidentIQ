@@ -1,0 +1,14 @@
+{
+  "match": {
+    "indices": "config-service-dependencies",
+    "match_field": "service",
+    "enrich_fields": [
+      "upstream_services",
+      "downstream_services",
+      "dependency_criticality",
+      "sla_target_p95", 
+      "owner_team",
+      "on_call_rotation"
+    ]
+  }
+}

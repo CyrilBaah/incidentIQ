@@ -1,0 +1,99 @@
+{
+  "index_patterns": ["incidentiq-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 1,
+      "refresh_interval": "5s",
+      "index": {
+        "lifecycle": {
+          "name": "logs-policy",
+          "rollover_alias": "logs"
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "service": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "environment": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "level": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "message": {
+          "type": "text",
+          "analyzer": "standard",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "error_type": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "error_message": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "stack_trace": {
+          "type": "text",
+          "analyzer": "keyword",
+          "index": false
+        },
+        "request_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "user_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "http_method": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "http_status": {
+          "type": "integer"
+        },
+        "http_path": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "response_time": {
+          "type": "float"
+        },
+        "host": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "container_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "labels": {
+          "type": "object",
+          "dynamic": true
+        }
+      }
+    }
+  },
+  "priority": 500,
+  "_meta": {
+    "description": "Index template for application and infrastructure logs",
+    "managed_by": "IncidentIQ",
+    "version": "1.0.0"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "index_patterns": ["incidentiq-runbooks-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 2,
+      "refresh_interval": "30s"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "runbook_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "service": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "title": {
+          "type": "text",
+          "analyzer": "standard",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "content": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "content_embedding": {
+          "type": "dense_vector",
+          "dims": 384,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "error_signatures": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "error_types": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "resolution_procedures": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "prerequisites": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "success_rate": {
+          "type": "float",
+          "doc_values": true
+        },
+        "last_updated": {
+          "type": "date"
+        },
+        "update_count": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "version": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "author": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "keyword",
+          "doc_values": true
+        }
+      }
+    }
+  },
+  "priority": 500,
+  "_meta": {
+    "description": "Index template for runbook and documentation entries",
+    "managed_by": "IncidentIQ",
+    "version": "1.0.0"
+  }
+}

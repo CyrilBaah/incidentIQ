@@ -1,0 +1,144 @@
+{
+  "index_patterns": ["incidentiq-incidents-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 2,
+      "refresh_interval": "5s"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "incident_id": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "status": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "severity": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "service": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "environment": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "error_type": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "error_message": {
+          "type": "text",
+          "analyzer": "standard",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "error_signature": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "error_signature_embedding": {
+          "type": "dense_vector",
+          "dims": 384,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "detected_at": {
+          "type": "date"
+        },
+        "acknowledged_at": {
+          "type": "date"
+        },
+        "resolved_at": {
+          "type": "date"
+        },
+        "closed_at": {
+          "type": "date"
+        },
+        "resolution_time_seconds": {
+          "type": "integer",
+          "doc_values": true
+        },
+        "root_cause": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "root_cause_service": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "resolution_steps": {
+          "type": "text",
+          "analyzer": "standard"
+        },
+        "resolution_workflow": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "resolution_confidence": {
+          "type": "float",
+          "doc_values": true
+        },
+        "affected_services": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "related_incidents": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "slack_thread_url": {
+          "type": "keyword",
+          "doc_values": false,
+          "index": false
+        },
+        "pagerduty_incident_url": {
+          "type": "keyword",
+          "doc_values": false,
+          "index": false
+        },
+        "runbook_updated": {
+          "type": "boolean"
+        },
+        "auto_resolved": {
+          "type": "boolean"
+        },
+        "approver": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "detection_agent": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "tags": {
+          "type": "keyword",
+          "doc_values": true
+        },
+        "metadata": {
+          "type": "object",
+          "dynamic": true
+        }
+      }
+    }
+  },
+  "priority": 500,
+  "_meta": {
+    "description": "Index template for incident records (active and resolved)",
+    "managed_by": "IncidentIQ",
+    "version": "1.0.0"
+  }
+}

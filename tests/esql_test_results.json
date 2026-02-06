@@ -1,0 +1,71 @@
+{
+  "detect_anomalies": {
+    "query": "detect_anomalies.esql",
+    "status": "PASS",
+    "anomalies_found": 0,
+    "suggestion": "Threshold of 3.0\u03c3 seems appropriate for baseline data",
+    "sample_results": [],
+    "columns": [
+      "service",
+      "current_error_rate",
+      "baseline_error_mean",
+      "baseline_error_stddev",
+      "error_anomaly_score",
+      "current_latency_p95",
+      "baseline_latency_mean",
+      "latency_anomaly_score",
+      "max_anomaly_score",
+      "incident_severity"
+    ]
+  },
+  "correlate_root_causes": {
+    "query": "correlate_root_causes.esql",
+    "status": "FAIL",
+    "services_found": 0,
+    "top_service": null,
+    "expected_service": "notification-service",
+    "suggestion": "Query returned no results - check data availability",
+    "incident_tested": "INC-011"
+  },
+  "analyze_trends": {
+    "query": "analyze_trends.esql",
+    "status": "PARTIAL",
+    "data_points": 1,
+    "suggestion": "May need more historical data or smaller bucket interval",
+    "columns": [
+      "service",
+      "time_bucket",
+      "total_events",
+      "error_events",
+      "error_rate",
+      "avg_latency",
+      "latency_p95",
+      "error_trend",
+      "latency_trend",
+      "error_anomaly_score",
+      "latency_anomaly_score",
+      "trend_status",
+      "baseline_error_mean",
+      "baseline_latency_mean"
+    ]
+  },
+  "calculate_baselines": {
+    "query": "calculate_baselines.esql",
+    "status": "FAIL",
+    "services_calculated": 0,
+    "suggestion": "No baseline data available - check logs/metrics exist",
+    "columns": [
+      "service",
+      "baseline_error_mean",
+      "baseline_error_stddev",
+      "baseline_error_p95",
+      "baseline_latency_mean",
+      "baseline_latency_stddev",
+      "baseline_latency_p95",
+      "calculation_period_days",
+      "sample_count",
+      "last_calculated",
+      "baseline_quality"
+    ]
+  }
+}

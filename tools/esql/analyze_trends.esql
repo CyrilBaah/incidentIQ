@@ -1,0 +1,94 @@
+/*
+ * IncidentIQ Trend Analysis Query
+ * 
+ * Purpose: Analyze error/latency trends over time to predict potential issues
+ * Execution: Hourly by Predictive Agent for trend monitoring
+ * Performance Target: <5 seconds for 24 hours of data
+ * 
+ * Parameters (replace in query for testing):
+ * - analysis_hours: Hours of history to analyze (default: 24)
+ * - bucket_size: Time bucket size for aggregation (default: "1h")
+ */
+
+FROM incidentiq-logs-*
+| WHERE @timestamp >= "2024-02-04T10:00:00.000Z"
+
+// Step 1: Create time buckets and aggregate metrics per service
+| EVAL time_bucket = DATE_TRUNC(1 hour, @timestamp)
+| EVAL 
+    is_error = CASE(level == "ERROR" OR level == "CRITICAL", 1, 0)
+| STATS 
+    total_events = COUNT(),
+    error_events = SUM(is_error),
+    avg_latency = AVG(response_time),
+    p95_latency = PERCENTILE(response_time, 95)
+  BY service, time_bucket
+
+// Step 2: Calculate rates and derived metrics
+| EVAL 
+    error_rate = CASE(
+      total_events > 0, 
+      ROUND(error_events * 100.0 / total_events, 2), 
+      0.0
+    ),
+    latency_p95 = COALESCE(p95_latency, 0.0)
+
+// Step 3: Calculate trend indicators  
+| EVAL 
+    error_trend = CASE(
+      error_rate > 5.0, "increasing",
+      error_rate > 1.0, "stable", 
+      "low"
+    ),
+    latency_trend = CASE(
+      latency_p95 > 1000, "high",
+      latency_p95 > 500, "elevated",
+      "normal" 
+    )
+
+// Step 4: Enrich with baseline data
+| ENRICH service_baselines ON service
+
+// Step 5: Calculate anomaly scores compared to baselines
+| EVAL 
+    error_anomaly_score = CASE(
+      COALESCE(baseline_error_mean, 0.0) > 0,
+      ROUND((error_rate - COALESCE(baseline_error_mean, 0.0)) / GREATEST(COALESCE(baseline_error_stddev, 1.0), 0.1), 2),
+      0.0
+    ),
+    latency_anomaly_score = CASE(
+      COALESCE(baseline_latency_mean, 0.0) > 0,
+      ROUND((latency_p95 - COALESCE(baseline_latency_mean, 0.0)) / GREATEST(COALESCE(baseline_latency_stddev, 1.0), 0.1), 2),
+      0.0
+    )
+
+// Step 6: Determine overall trend status
+| EVAL 
+    trend_status = CASE(
+      error_anomaly_score > 3.0 OR latency_anomaly_score > 3.0, "critical",
+      error_anomaly_score > 2.0 OR latency_anomaly_score > 2.0, "warning",
+      error_anomaly_score > 1.0 OR latency_anomaly_score > 1.0, "elevated",
+      "normal"
+    )
+
+// Step 7: Sort and select output
+| SORT error_anomaly_score DESC, latency_anomaly_score DESC
+
+// Step 8: Select final output fields
+| KEEP
+    service,
+    time_bucket,
+    total_events,
+    error_events,
+    error_rate,
+    avg_latency,
+    latency_p95,
+    error_trend,
+    latency_trend,
+    error_anomaly_score,
+    latency_anomaly_score,
+    trend_status,
+    baseline_error_mean,
+    baseline_latency_mean
+
+| LIMIT 20

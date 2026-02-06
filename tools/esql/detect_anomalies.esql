@@ -1,0 +1,79 @@
+/*
+ * IncidentIQ Anomaly Detection Query
+ * 
+ * Purpose: Detect anomalies in real-time by comparing current metrics to baselines
+ * Execution: Every 2 minutes by Detective Agent
+ * Performance Target: <5 seconds even with millions of logs
+ * 
+ * Template Variables:
+ * - $time_window: Time window to analyze (default: "2m")
+ * - $anomaly_threshold: Sigma threshold for anomaly detection (default: 3.0)
+ */
+
+FROM incidentiq-logs-*
+| WHERE @timestamp > NOW() - $time_window
+
+// Step 1: Calculate error rates from logs only (avoid type conflicts)
+| EVAL is_error = CASE(level == "ERROR", 1, 0)
+| STATS 
+    total_logs = COUNT(),
+    error_count = SUM(is_error),
+    p95_response_time = PERCENTILE(response_time, 95)
+  BY service
+
+// Step 2: Calculate derived metrics
+| EVAL 
+    current_error_rate = CASE(
+      total_logs > 0, 
+      ROUND(error_count * 100.0 / total_logs, 2), 
+      0.0
+    ),
+    current_latency_p95 = COALESCE(p95_response_time, 0.0),
+    // Set CPU metrics to null for now - will get from metrics index separately
+    current_cpu = 0.0,
+    current_memory = 0.0
+
+// Step 3: Enrich with baseline statistics
+| ENRICH service_baselines ON service
+
+// Step 4: Calculate anomaly scores (z-scores) - focus on error and latency
+| EVAL 
+    error_anomaly_score = CASE(
+      baseline_error_stddev > 0,
+      ABS(current_error_rate - baseline_error_mean) / baseline_error_stddev,
+      0.0
+    ),
+    latency_anomaly_score = CASE(
+      baseline_latency_stddev > 0,
+      ABS(current_latency_p95 - baseline_latency_mean) / baseline_latency_stddev,
+      0.0
+    )
+
+// Step 5: Calculate maximum anomaly score and severity
+| EVAL 
+    max_anomaly_score = GREATEST(error_anomaly_score, latency_anomaly_score),
+    incident_severity = CASE(
+      max_anomaly_score > 5.0, "CRITICAL",
+      max_anomaly_score > 3.0, "HIGH",
+      max_anomaly_score > 2.0, "MEDIUM",
+      "LOW"
+    )
+
+// Step 6: Filter for significant anomalies only
+| WHERE max_anomaly_score > $anomaly_threshold
+
+// Step 7: Select output fields and sort by severity
+| KEEP 
+    service,
+    current_error_rate,
+    baseline_error_mean,
+    baseline_error_stddev,
+    error_anomaly_score,
+    current_latency_p95,
+    baseline_latency_mean,
+    latency_anomaly_score,
+    max_anomaly_score,
+    incident_severity
+
+| SORT max_anomaly_score DESC
+| LIMIT 10

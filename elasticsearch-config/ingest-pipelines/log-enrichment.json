@@ -1,0 +1,238 @@
+{
+  "description": "IncidentIQ Log Enrichment Pipeline - Enriches logs with metadata before indexing",
+  "version": 1,
+  "processors": [
+    {
+      "set": {
+        "description": "Add pipeline metadata",
+        "field": "pipeline.name",
+        "value": "log-enrichment"
+      }
+    },
+    {
+      "date": {
+        "description": "Parse timestamp if present in message",
+        "field": "timestamp",
+        "target_field": "@timestamp",
+        "formats": [
+          "ISO8601",
+          "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+          "yyyy-MM-dd HH:mm:ss,SSS",
+          "MMM dd HH:mm:ss"
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "json": {
+        "description": "Parse JSON message if valid JSON",
+        "field": "message",
+        "target_field": "parsed",
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "description": "Flatten parsed JSON fields to root level",
+        "if": "ctx.parsed != null",
+        "source": "if (ctx.parsed instanceof Map) { for (def entry : ctx.parsed.entrySet()) { if (entry.getKey() != 'message') { ctx[entry.getKey()] = entry.getValue(); } } }"
+      }
+    },
+    {
+      "remove": {
+        "description": "Remove temporary parsed field",
+        "field": "parsed",
+        "ignore_failure": true
+      }
+    },
+    {
+      "grok": {
+        "description": "Extract error patterns from message",
+        "field": "message",
+        "patterns": [
+          "\\[%{WORD:level}\\]\\s*%{GREEDYDATA:error_message}",
+          "%{WORD:level}:\\s*%{GREEDYDATA:error_message}",
+          "ERROR\\s*%{GREEDYDATA:error_message}",
+          "Exception\\s*in\\s*%{WORD:error_type}:\\s*%{GREEDYDATA:error_message}",
+          "%{JAVACLASS:error_type}:\\s*%{GREEDYDATA:error_message}",
+          "HTTP\\s*%{NUMBER:http_status}\\s*%{GREEDYDATA:error_message}"
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "grok": {
+        "description": "Extract request ID from message",
+        "field": "message", 
+        "patterns": [
+          "request_id[=:]\\s*%{UUID:request_id}",
+          "trace[_-]?id[=:]\\s*%{DATA:trace_id}",
+          "\\[%{DATA:request_id}\\]"
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "set": {
+        "description": "Normalize log level to uppercase",
+        "if": "ctx.level != null",
+        "field": "level",
+        "value": "{{level}}"
+      }
+    },
+    {
+      "script": {
+        "description": "Normalize log level values",
+        "if": "ctx.level != null",
+        "source": "String level = ctx.level.toString().toUpperCase(); if (level.contains('ERR')) { ctx.level = 'ERROR'; } else if (level.contains('WARN')) { ctx.level = 'WARN'; } else if (level.contains('INFO')) { ctx.level = 'INFO'; } else if (level.contains('DEBUG')) { ctx.level = 'DEBUG'; } else if (level.contains('TRACE')) { ctx.level = 'TRACE'; } else if (level.contains('FATAL') || level.contains('CRIT')) { ctx.level = 'CRITICAL'; }"
+      }
+    },
+    {
+      "set": {
+        "description": "Extract environment from hostname",
+        "if": "ctx.host?.name != null",
+        "field": "environment",
+        "value": "unknown"
+      }
+    },
+    {
+      "script": {
+        "description": "Determine environment from hostname patterns", 
+        "if": "ctx.host?.name != null",
+        "source": "String hostname = ctx.host.name.toLowerCase(); if (hostname.contains('prod') || hostname.contains('production')) { ctx.environment = 'production'; } else if (hostname.contains('staging') || hostname.contains('stage')) { ctx.environment = 'staging'; } else if (hostname.contains('dev') || hostname.contains('development')) { ctx.environment = 'development'; } else if (hostname.contains('test') || hostname.contains('testing')) { ctx.environment = 'testing'; } else if (hostname.contains('local')) { ctx.environment = 'local'; } else { ctx.environment = 'unknown'; }"
+      }
+    },
+    {
+      "set": {
+        "description": "Set default service if not present",
+        "if": "ctx.service == null",
+        "field": "service",
+        "value": "unknown"
+      }
+    },
+    {
+      "set": {
+        "description": "Set default level if not extracted",
+        "if": "ctx.level == null",
+        "field": "level",
+        "value": "INFO"
+      }
+    },
+    {
+      "script": {
+        "description": "Calculate error signature for grouping similar errors",
+        "if": "ctx.service != null && (ctx.error_type != null || ctx.level == 'ERROR' || ctx.level == 'CRITICAL')",
+        "source": "def service = ctx.service ?: 'unknown'; def errorType = ctx.error_type ?: ctx.level ?: 'unknown'; def errorMsg = ctx.error_message ?: ctx.message ?: ''; def msgPattern = errorMsg.toLowerCase().replaceAll('[0-9]+', 'N').replaceAll('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', 'UUID').replaceAll('/[a-zA-Z0-9/_-]+', '/PATH').split(' ').take(5).join(' '); def signature = service + ':' + errorType + ':' + msgPattern; ctx.error_signature = signature.hashCode().toString();"
+      }
+    },
+    {
+      "set": {
+        "description": "Add severity score based on level",
+        "field": "severity_score",
+        "value": 1
+      }
+    },
+    {
+      "script": {
+        "description": "Calculate severity score",
+        "source": "def level = ctx.level?.toString()?.toUpperCase(); if (level == 'CRITICAL' || level == 'FATAL') { ctx.severity_score = 5; } else if (level == 'ERROR') { ctx.severity_score = 4; } else if (level == 'WARN') { ctx.severity_score = 3; } else if (level == 'INFO') { ctx.severity_score = 2; } else { ctx.severity_score = 1; }"
+      }
+    },
+    {
+      "convert": {
+        "description": "Convert HTTP status to integer",
+        "if": "ctx.http_status != null",
+        "field": "http_status",
+        "type": "integer",
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "description": "Add HTTP status category",
+        "if": "ctx.http_status != null",
+        "source": "int status = (int) ctx.http_status; if (status >= 500) { ctx.http_status_category = 'server_error'; } else if (status >= 400) { ctx.http_status_category = 'client_error'; } else if (status >= 300) { ctx.http_status_category = 'redirect'; } else if (status >= 200) { ctx.http_status_category = 'success'; } else { ctx.http_status_category = 'informational'; }"
+      }
+    },
+    {
+      "convert": {
+        "description": "Convert response_time to float",
+        "if": "ctx.response_time != null",
+        "field": "response_time",
+        "type": "float",
+        "ignore_failure": true
+      }
+    },
+    {
+      "set": {
+        "description": "Add latency category based on response time",
+        "if": "ctx.response_time != null",
+        "field": "latency_category",
+        "value": "normal"
+      }
+    },
+    {
+      "script": {
+        "description": "Categorize response time",
+        "if": "ctx.response_time != null",
+        "source": "double responseTime = (double) ctx.response_time; if (responseTime > 5000) { ctx.latency_category = 'very_slow'; } else if (responseTime > 2000) { ctx.latency_category = 'slow'; } else if (responseTime > 500) { ctx.latency_category = 'elevated'; } else { ctx.latency_category = 'normal'; }"
+      }
+    },
+    {
+      "set": {
+        "description": "Add processing timestamp",
+        "field": "processed_at",
+        "value": "{{_ingest.timestamp}}"
+      }
+    },
+    {
+      "remove": {
+        "description": "Remove sensitive fields",
+        "field": [
+          "password",
+          "token", 
+          "api_key",
+          "secret",
+          "authorization",
+          "cookie"
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "description": "Redact sensitive data from message",
+        "source": "if (ctx.message != null) { def message = ctx.message.toString(); message = message.replaceAll('(?i)(password|pwd)[=:]\\s*[^\\s]+', '$1=***'); message = message.replaceAll('(?i)(token|api_?key)[=:]\\s*[^\\s]+', '$1=***'); message = message.replaceAll('(?i)(secret)[=:]\\s*[^\\s]+', '$1=***'); message = message.replaceAll('(?i)(authorization)[=:]\\s*[^\\s]+', '$1=***'); ctx.message = message; }"
+      }
+    },
+    {
+      "set": {
+        "description": "Add tags for categorization",
+        "field": "tags",
+        "value": []
+      }
+    },
+    {
+      "script": {
+        "description": "Add relevant tags based on log content",
+        "source": "def tags = []; if (ctx.level == 'ERROR' || ctx.level == 'CRITICAL') { tags.add('error'); } if (ctx.http_status != null && ctx.http_status >= 400) { tags.add('http_error'); } if (ctx.response_time != null && ctx.response_time > 2000) { tags.add('slow_response'); } if (ctx.error_type != null) { tags.add('exception'); } if (ctx.message?.toString()?.toLowerCase()?.contains('timeout')) { tags.add('timeout'); } if (ctx.message?.toString()?.toLowerCase()?.contains('connection')) { tags.add('connection_issue'); } ctx.tags = tags;"
+      }
+    }
+  ],
+  "on_failure": [
+    {
+      "set": {
+        "description": "Mark failed documents",
+        "field": "pipeline.failed",
+        "value": true
+      }
+    },
+    {
+      "set": {
+        "description": "Store failure reason",
+        "field": "pipeline.failure_message",
+        "value": "{{_ingest.on_failure_message}}"
+      }
+    }
+  ]
+}

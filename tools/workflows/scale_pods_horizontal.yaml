@@ -1,0 +1,91 @@
+name: scale_pods_horizontal
+description: Horizontally scale service by adjusting replica count
+risk_level: medium
+auto_approve: true
+estimated_duration_seconds: 300
+requires_kubernetes: true
+
+inputs:
+  - name: service
+    type: string
+    required: true
+  
+  - name: namespace
+    type: string
+    default: "default"
+  
+  - name: target_replicas
+    type: integer
+    required: false
+    description: Target replica count (if not provided, auto-calculate)
+  
+  - name: scale_factor
+    type: float
+    required: false
+    default: 1.5
+    description: Multiply current replicas by this (if target_replicas not set)
+
+pre_checks:
+  - name: get_current_replicas
+    type: kubernetes
+    action: get_deployment
+    parameters:
+      name: "${service}"
+      namespace: "${namespace}"
+    capture_output: current_replicas
+  
+  - name: calculate_target
+    type: internal
+    action: calculate
+    expression: |
+      if target_replicas is set:
+        target = target_replicas
+      else:
+        target = max(1, min(10, int(current_replicas * scale_factor)))
+    capture_output: final_target_replicas
+
+steps:
+  - name: scale_deployment
+    type: kubernetes
+    action: scale
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      replicas: "${final_target_replicas}"
+    on_failure: rollback
+  
+  - name: wait_for_scale
+    type: kubernetes
+    action: wait_for_replicas
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      target: "${final_target_replicas}"
+      timeout: 300
+    on_failure: rollback
+  
+  - name: verify_all_healthy
+    type: kubernetes
+    action: check_all_pods_ready
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    retry_attempts: 5
+    on_failure: rollback
+
+rollback:
+  - name: restore_original_replicas
+    type: kubernetes
+    action: scale
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      replicas: "${current_replicas}"
+
+success_actions:
+  - name: notify_scale
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "✅ ${service} scaled from ${current_replicas} to ${final_target_replicas} replicas"

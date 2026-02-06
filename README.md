@@ -25,25 +25,33 @@ python test_connections.py
 python src/detective_agent.py --once          # Detect new incidents
 python src/analyst_agent.py -i INC-001        # Analyze incident 
 python src/remediation_agent.py -i INC-001    # Generate remediation plan
+python src/documentation_agent.py -i INC-001  # Generate documentation
 
-# 5. End-to-end testing
+# 5. Full pipeline orchestration
+python src/agent_orchestrator.py -i INC-001   # Single incident pipeline
+python src/agent_orchestrator.py --monitor    # Continuous monitoring
+
+# 6. End-to-end testing
 python tests/test_end_to_end.py               # Validate entire system
 ```
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Detective Agent │───▶│ Analyst Agent   │───▶│Remediation Agent│
-│ Anomaly         │    │ Root Cause      │    │ Workflow        │
-│ Detection       │    │ Analysis        │    │ Planning        │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Elasticsearch Cloud                         │
-│  📊 Logs    📈 Metrics    🚨 Incidents    📋 Runbooks         │
-└─────────────────────────────────────────────────────────────────┘
+                            🎯 Agent Orchestrator
+                                 │ (Master Controller)
+                                 ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Detective Agent │───▶│ Analyst Agent   │───▶│Remediation Agent│───▶│Documentation    │
+│ Anomaly         │    │ Root Cause      │    │ Workflow        │    │ Agent           │
+│ Detection       │    │ Analysis        │    │ Planning        │    │ Report Gen      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │                       │
+         ▼                       ▼                       ▼                       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                    Elasticsearch Cloud                                             │
+│  📊 Logs    📈 Metrics    🚨 Incidents    📋 Runbooks    📄 Documentation         │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 🤖 Agent Pipeline
@@ -51,6 +59,8 @@ python tests/test_end_to_end.py               # Validate entire system
 1. **🔍 Detective Agent** - Continuous monitoring and incident detection
 2. **🔬 Analyst Agent** - Root cause analysis and workflow recommendation  
 3. **🔧 Remediation Agent** - Workflow validation and execution planning
+4. **📚 Documentation Agent** - Post-incident reports and runbook generation
+5. **🎯 Agent Orchestrator** - Master pipeline controller coordinating all agents
 
 ## ✨ Features
 
@@ -61,6 +71,8 @@ python tests/test_end_to_end.py               # Validate entire system
 - ✅ **Workflow validation** against predefined catalog
 - ✅ **Risk assessment** with auto-approval logic
 - ✅ **Detailed remediation planning** with rollback procedures
+- ✅ **Post-incident documentation** with markdown reports and runbook updates
+- ✅ **Complete pipeline orchestration** with monitoring and error handling
 - ✅ **Rich console UI** with progress indicators and tables
 - ✅ **Comprehensive error handling** and graceful degradation
 
@@ -122,6 +134,55 @@ python src/analyst_agent.py --incident INC-002 --quiet  # Quiet mode
 ```bash
 python src/remediation_agent.py --incident INC-001  # Generate plan
 python src/remediation_agent.py --catalog           # Show workflows
+```
+
+### 📚 Documentation Agent (`src/documentation_agent.py`)
+
+**Purpose**: Post-incident report and runbook generation
+
+**Features**:
+- Comprehensive post-incident reports with MTTR calculations
+- Runbook updates with resolution procedures
+- Error type categorization and prevention strategies
+- Markdown file generation with structured formatting
+
+**Usage**:
+```bash
+python src/documentation_agent.py --incident INC-001    # Generate documentation
+python src/documentation_agent.py --reports             # List generated reports
+```
+
+### 🎯 Agent Orchestrator (`src/agent_orchestrator.py`)
+
+**Purpose**: Master pipeline controller coordinating all agents
+
+**Features**:
+- Single incident processing mode
+- Continuous monitoring mode (polls every 30s for `status="active"`)
+- Complete pipeline execution: Detective → Analyst → Remediation → Documentation
+- Status tracking throughout pipeline lifecycle
+- Comprehensive error handling and escalation
+- Detailed statistics and operational monitoring
+
+**Pipeline Status Flow**:
+```
+active → analyzing → analyzed → planning → plan_ready/approval_required → 
+executing → executed → documenting → documented
+```
+
+**Usage**:
+```bash
+# Single incident processing
+python src/agent_orchestrator.py --incident INC-001
+
+# Continuous monitoring mode 
+python src/agent_orchestrator.py --monitor --interval 30
+
+# Show detailed statistics
+python src/agent_orchestrator.py --stats
+
+# Quiet mode for automation
+python src/agent_orchestrator.py --incident INC-001 --quiet
 ```
 
 ## 🧪 Testing & Validation

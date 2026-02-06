@@ -18,6 +18,8 @@ pandas==2.2.2
 # Utilities
 requests==2.32.3
 aiohttp==3.11.2
+rich==13.9.4
+tqdm==4.67.1
 
 # Testing
 pytest==8.3.4

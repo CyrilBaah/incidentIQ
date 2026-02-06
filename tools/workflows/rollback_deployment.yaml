@@ -1,0 +1,124 @@
+name: rollback_deployment
+description: Rollback deployment to previous stable version
+risk_level: high
+auto_approve: false  # Requires human approval!
+estimated_duration_seconds: 600
+requires_kubernetes: true
+
+inputs:
+  - name: service
+    type: string
+    required: true
+  
+  - name: namespace
+    type: string
+    default: "default"
+  
+  - name: target_revision
+    type: integer
+    required: false
+    description: Specific revision to rollback to (if not set, use previous)
+
+approval:
+  required: true
+  approvers:
+    - role: sre_oncall
+    - role: service_owner
+  timeout_seconds: 600
+  message: |
+    🚨 HIGH RISK: Rollback deployment request
+    Service: ${service}
+    Namespace: ${namespace}
+    Current revision: ${current_revision}
+    Target revision: ${target_revision or 'previous'}
+    
+    React with ✅ to approve, ❌ to deny
+
+pre_checks:
+  - name: get_rollout_history
+    type: kubernetes
+    action: get_rollout_history
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    capture_output: revision_history
+  
+  - name: verify_target_revision
+    type: internal
+    action: validate
+    condition: |
+      if target_revision:
+        assert target_revision in revision_history
+      else:
+        assert len(revision_history) > 1
+
+steps:
+  - name: create_backup
+    type: kubernetes
+    action: capture_deployment_state
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    capture_output: backup_state
+  
+  - name: execute_rollback
+    type: kubernetes
+    action: rollout_undo
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      to_revision: "${target_revision}"
+    on_failure: abort  # Can't rollback a rollback easily
+  
+  - name: wait_for_rollback
+    type: kubernetes
+    action: wait_for_rollout_complete
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      timeout: 480
+    on_failure: abort
+  
+  - name: smoke_test
+    type: kubernetes
+    action: check_pod_health
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    retry_attempts: 3
+    on_failure: abort
+  
+  - name: verify_error_rate
+    type: elasticsearch
+    action: esql_query
+    query: |
+      FROM logs-*
+      | WHERE service == "${service}"
+      | WHERE @timestamp > NOW() - 5m
+      | STATS error_rate = COUNT_IF(level == "ERROR") / COUNT(*)
+    validation:
+      - error_rate < 0.1
+    on_failure: abort
+
+rollback:
+  - name: restore_from_backup
+    type: kubernetes
+    action: apply_deployment_state
+    parameters:
+      state: "${backup_state}"
+  
+  - name: critical_alert
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "🚨 CRITICAL: Rollback of ${service} failed! Manual intervention required immediately!"
+      mention: "@oncall @leadership"
+
+success_actions:
+  - name: notify_rollback_success
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "✅ ${service} successfully rolled back to revision ${target_revision or 'previous'}"

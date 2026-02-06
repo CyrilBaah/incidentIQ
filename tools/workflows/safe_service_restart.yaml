@@ -1,0 +1,144 @@
+name: safe_service_restart
+description: Restart service pods with zero-downtime rolling restart
+risk_level: low
+auto_approve: true
+estimated_duration_seconds: 180
+requires_kubernetes: true
+
+inputs:
+  - name: service
+    type: string
+    required: true
+    description: Service name to restart
+  
+  - name: namespace
+    type: string
+    required: false
+    default: "default"
+    description: Kubernetes namespace
+
+  - name: timeout_seconds
+    type: integer
+    required: false
+    default: 300
+    description: Max time to wait for restart
+
+pre_checks:
+  - name: verify_service_exists
+    type: kubernetes
+    action: get_deployment
+    parameters:
+      name: "${service}"
+      namespace: "${namespace}"
+    expected: exists
+    on_failure: abort
+  
+  - name: check_current_health
+    type: kubernetes
+    action: get_pod_status
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    expected: ready_count > 0
+    on_failure: abort
+  
+  - name: capture_baseline_metrics
+    type: elasticsearch
+    action: esql_query
+    query: |
+      FROM metrics-*
+      | WHERE service == "${service}"
+      | WHERE @timestamp > NOW() - 5m
+      | STATS
+          baseline_error_rate = AVG(error_count / request_count),
+          baseline_latency = AVG(request_latency_p95)
+    on_failure: continue
+
+steps:
+  - name: rollout_restart
+    type: kubernetes
+    action: rollout_restart
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    on_failure: rollback
+    timeout_seconds: 120
+  
+  - name: wait_for_ready
+    type: kubernetes
+    action: wait_for_deployment_ready
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      timeout: "${timeout_seconds}"
+    on_failure: rollback
+  
+  - name: verify_health
+    type: kubernetes
+    action: check_pod_health
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    retry_attempts: 3
+    retry_delay_seconds: 10
+    on_failure: rollback
+  
+  - name: verify_metrics
+    type: elasticsearch
+    action: esql_query
+    query: |
+      FROM metrics-*
+      | WHERE service == "${service}"
+      | WHERE @timestamp > NOW() - 2m
+      | STATS
+          current_error_rate = AVG(error_count / request_count),
+          current_latency = AVG(request_latency_p95)
+    validation:
+      - current_error_rate < (baseline_error_rate * 1.2)
+      - current_latency < (baseline_latency * 1.5)
+    on_failure: rollback
+  
+  - name: update_incident_status
+    type: internal
+    action: update_incident
+    parameters:
+      status: "remediation_in_progress"
+      message: "Service restarted successfully"
+
+rollback:
+  - name: alert_failure
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "⚠️ Rollback initiated for ${service} restart"
+  
+  - name: rollback_deployment
+    type: kubernetes
+    action: rollout_undo
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+  
+  - name: notify_oncall
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "❌ ${service} restart failed, manual intervention required"
+
+success_actions:
+  - name: notify_success
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "✅ ${service} restarted successfully"
+  
+  - name: update_final_status
+    type: internal
+    action: update_incident
+    parameters:
+      status: "resolved"
+      auto_resolved: true
+      resolution_time_seconds: "${execution_time}"

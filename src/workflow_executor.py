@@ -547,7 +547,14 @@ class WorkflowExecutor:
         substituted_params = {}
         for key, value in parameters.items():
             if isinstance(value, str):
-                substituted_params[key] = self.substitute_parameters(value, params)
+                substituted_value = self.substitute_parameters(value, params)
+                # Try to convert to appropriate type
+                if substituted_value.isdigit():
+                    substituted_params[key] = int(substituted_value)
+                elif substituted_value.replace('.', '').isdigit():
+                    substituted_params[key] = float(substituted_value)
+                else:
+                    substituted_params[key] = substituted_value
             else:
                 substituted_params[key] = value
         
@@ -606,8 +613,14 @@ class WorkflowExecutor:
         # Update context with any captured outputs
         capture_output = step.get('capture_output')
         if capture_output and result.get('success'):
+            # Look for the capture_output key in the result
             if capture_output in result:
                 self.execution_context[capture_output] = result[capture_output]
+            # Also try common result fields
+            elif 'replicas' in result:
+                self.execution_context['current_replicas'] = result['replicas']
+            elif 'revisions' in result:
+                self.execution_context['revision_history'] = result['revisions']
         
         if result.get('success'):
             if self.verbose:

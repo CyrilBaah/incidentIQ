@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import new Google Gen AI SDK
-from google import genai
-from google.genai import types
+import google.genai as genai
+import google.genai.types as types
 
 # Import for Claude fallback
 try:

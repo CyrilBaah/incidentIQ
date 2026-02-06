@@ -31,6 +31,7 @@ except Exception as e:
         # Try with Claude
         if os.getenv("ANTHROPIC_API_KEY"):
             try:
+                import anthropic
                 client = LLMClient(provider="anthropic", verbose=True)
                 response = client.generate("What is 2+2? Answer with just the number.", max_tokens=20)
                 print(f"✅ Response (Claude): {response}\n")

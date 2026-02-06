@@ -3,7 +3,7 @@ elasticsearch==8.17.0
 
 # AI/ML
 anthropic==0.77.1
-google-generativeai==0.8.6
+google-genai==1.62.0
 
 # Cloud integrations
 slack-sdk==3.33.0

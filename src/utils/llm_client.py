@@ -8,12 +8,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Suppress deprecation warning for google.generativeai
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+# Import new Google Gen AI SDK
+from google import genai
+from google.genai import types
 
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig, HarmCategory, HarmBlockThreshold
+# Import for Claude fallback
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
 
 
 class RateLimiter:
@@ -104,9 +107,8 @@ class LLMClient:
         
         # Initialize provider
         if self.provider == "gemini":
-            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            # Use gemini-2.5-flash (current stable model as of Feb 2026)
-            self.model = genai.GenerativeModel("gemini-2.5-flash")
+            # Configure client with API key
+            self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
             if self.verbose:
                 print("✅ Initialized Gemini: gemini-2.5-flash")
         else:
@@ -190,6 +192,23 @@ class LLMClient:
                 
                 # Check if it's a rate limit error (use specific patterns)
                 if "429" in error_msg or "rate limit" in error_msg.lower() or "quota" in error_msg.lower() or "resource_exhausted" in error_msg.lower():
+                    # For quota exceeded on Gemini, try Claude fallback first
+                    if self.provider == "gemini" and "quota" in error_msg.lower() and attempt == 0:
+                        if self.verbose:
+                            print("\n⚠️  Gemini quota exceeded. Trying Claude fallback...")
+                        try:
+                            import anthropic
+                            claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                            result = self._generate_with_claude_fallback(
+                                claude, prompt, system_prompt, temperature, max_tokens, response_format
+                            )
+                            self.api_calls += 1
+                            return result
+                        except Exception as fallback_error:
+                            if self.verbose:
+                                print(f"❌ Claude fallback failed: {fallback_error}")
+                            # Continue with normal retry logic
+                    
                     if attempt < retry_count - 1:
                         wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s
                         print(f"⏳ Rate limited by API, waiting {wait_time}s (attempt {attempt + 1}/{retry_count})")
@@ -218,56 +237,66 @@ class LLMClient:
         max_tokens: int,
         response_format: Optional[str]
     ) -> str:
-        """Generate response using Gemini"""
+        """Generate response using Gemini with new google.genai SDK"""
         
-        # Combine system prompt and user prompt
-        full_prompt = prompt
+        # Build content list
+        contents = []
+        
         if system_prompt:
-            full_prompt = f"{system_prompt}\n\n{prompt}"
+            contents.append({"role": "user", "parts": [{"text": system_prompt}]})
         
-        # If JSON format requested, add instruction
+        # Add user prompt
+        user_content = prompt
         if response_format == "json":
-            full_prompt += "\n\nIMPORTANT: Respond with valid JSON only, no markdown, no other text."
+            user_content += "\n\nIMPORTANT: Respond with valid JSON only, no markdown, no other text."
+        
+        contents.append({"role": "user", "parts": [{"text": user_content}]})
         
         # Generation config
-        generation_config = GenerationConfig(
+        config = types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_tokens,
+            # Safety settings - allow technical content
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE
+                )
+            ]
         )
         
-        # Safety settings - BLOCK_NONE for technical content
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        
-        # Call Gemini API
-        response = self.model.generate_content(
-            full_prompt,
-            generation_config=generation_config,
-            safety_settings=safety_settings
+        # Call new API
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=config
         )
         
-        # Check if response was blocked by safety filters
+        # Check for safety blocks
         if hasattr(response, 'candidates') and response.candidates:
             finish_reason = response.candidates[0].finish_reason
-            # Finish reasons: 0=UNSPECIFIED, 1=STOP (normal), 2=SAFETY, 3=RECITATION, 4=OTHER, 5=MAX_TOKENS
-            if finish_reason == 2:  # SAFETY
+            if finish_reason == types.FinishReason.SAFETY:
                 raise Exception("Response blocked by safety filters")
-            elif finish_reason == 3:  # RECITATION
+            elif finish_reason == types.FinishReason.RECITATION:
                 raise Exception("Response blocked due to recitation/copyright concerns")
-            elif finish_reason not in [0, 1, 5]:  # Not UNSPECIFIED, STOP, or MAX_TOKENS
-                raise Exception(f"Response generation incomplete (finish_reason: {finish_reason})")
         
         # Track token usage
         try:
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 tokens = response.usage_metadata.total_token_count
                 self.total_tokens += tokens
-                # Gemini 2.0 Flash pricing: ~$0.075 per 1M input tokens, $0.30 per 1M output
-                # Using average of $0.15 per 1M tokens
                 self.total_cost += (tokens / 1_000_000) * 0.15
                 
                 if self.verbose:
@@ -276,16 +305,50 @@ class LLMClient:
             if self.verbose:
                 print(f"⚠️  Could not track token usage: {e}")
         
-        # Extract text safely
-        try:
-            return response.text
-        except (ValueError, AttributeError) as e:
-            # Fallback if .text accessor fails
-            if hasattr(response, 'candidates') and response.candidates:
-                if response.candidates[0].content.parts:
-                    return response.candidates[0].content.parts[0].text
-            raise Exception(f"Could not extract response text: {e}")
+        # Extract text
+        if response.candidates and response.candidates[0].content.parts:
+            return response.candidates[0].content.parts[0].text
+        else:
+            raise Exception("No response content generated")
     
+    def _generate_anthropic(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+        max_tokens: int,
+        response_format: Optional[str]
+    ) -> str:
+        """Generate response using Anthropic Claude"""
+        
+        # Build messages
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Add JSON instruction if needed
+        if response_format == "json":
+            messages[0]["content"] += "\n\nIMPORTANT: Respond with valid JSON only, no markdown, no other text."
+        
+        # Call Claude
+        response = self.client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt or "You are a helpful assistant.",
+            messages=messages
+        )
+        
+        # Track usage
+        if hasattr(response, 'usage'):
+            tokens = response.usage.input_tokens + response.usage.output_tokens
+            self.total_tokens += tokens
+            # Claude pricing: ~$3 per 1M input, $15 per 1M output (avg $9)
+            self.total_cost += (tokens / 1_000_000) * 9.0
+            
+            if self.verbose:
+                print(f"📊 Tokens used (Claude): {tokens}")
+        
+        return response.content[0].text
+
     def _generate_with_claude_fallback(
         self,
         claude_client,
@@ -306,7 +369,7 @@ class LLMClient:
         
         # Call Claude
         response = claude_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",  # Updated model name
             max_tokens=max_tokens,
             temperature=temperature,
             system=system_prompt or "You are a helpful assistant.",

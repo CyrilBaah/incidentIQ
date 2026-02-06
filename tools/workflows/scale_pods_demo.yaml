@@ -1,0 +1,66 @@
+name: scale_pods_demo
+description: Simple horizontal scaling for demo
+risk_level: medium
+auto_approve: true
+estimated_duration_seconds: 60
+requires_kubernetes: true
+
+inputs:
+  - name: service
+    type: string
+    required: true
+  
+  - name: namespace
+    type: string
+    default: "default"
+  
+  - name: target_replicas
+    type: integer
+    required: true
+    description: Target replica count
+
+pre_checks:
+  - name: verify_deployment_exists
+    type: kubernetes
+    action: get_deployment
+    parameters:
+      name: "${service}"
+      namespace: "${namespace}"
+    on_failure: abort
+
+steps:
+  - name: scale_deployment
+    type: kubernetes
+    action: scale
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      replicas: "${target_replicas}"
+    on_failure: abort
+  
+  - name: wait_for_scale
+    type: kubernetes
+    action: wait_for_replicas
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+      target: "${target_replicas}"
+      timeout: 120
+    on_failure: abort
+  
+  - name: verify_all_healthy
+    type: kubernetes
+    action: check_all_pods_ready
+    parameters:
+      deployment: "${service}"
+      namespace: "${namespace}"
+    retry_attempts: 3
+    on_failure: abort
+
+success_actions:
+  - name: notify_scale_success
+    type: slack
+    action: post_message
+    parameters:
+      channel: "#incidents"
+      message: "✅ ${service} scaled to ${target_replicas} replicas in ${namespace}"

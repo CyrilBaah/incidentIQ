@@ -1,8 +1,8 @@
-name: safe_service_restart
-description: Restart service pods with zero-downtime rolling restart
+name: safe_service_restart_demo
+description: Safe service restart without complex metrics validation (for demo)
 risk_level: low
 auto_approve: true
-estimated_duration_seconds: 180
+estimated_duration_seconds: 60
 requires_kubernetes: true
 
 inputs:
@@ -20,7 +20,7 @@ inputs:
   - name: timeout_seconds
     type: integer
     required: false
-    default: 300
+    default: 120
     description: Max time to wait for restart
 
 pre_checks:
@@ -41,13 +41,6 @@ pre_checks:
       namespace: "${namespace}"
     expected: ready_count > 0
     on_failure: abort
-  
-  - name: capture_baseline_metrics
-    type: elasticsearch
-    action: esql_query
-    parameters:
-      query: "FROM metrics-* | WHERE service.keyword == \"${service}\" | WHERE @timestamp > NOW() - 5m | STATS baseline_error_rate = AVG(error_count), baseline_latency = AVG(latency) | LIMIT 1"
-    on_failure: continue
 
 steps:
   - name: rollout_restart
@@ -75,24 +68,14 @@ steps:
       deployment: "${service}"
       namespace: "${namespace}"
     retry_attempts: 3
-    retry_delay_seconds: 10
-    on_failure: rollback
-  
-  - name: verify_metrics
-    type: elasticsearch
-    action: esql_query
-    parameters:
-      query: "FROM metrics-* | WHERE service.keyword == \"${service}\" | WHERE @timestamp > NOW() - 2m | STATS current_error_rate = AVG(error_count), current_latency = AVG(latency) | LIMIT 1"
-    validation:
-      - current_error_rate < 10
-      - current_latency < 1000
+    retry_delay_seconds: 5
     on_failure: rollback
   
   - name: update_incident_status
     type: internal
     action: update_incident
     parameters:
-      status: "remediation_in_progress"
+      status: "remediation_complete"
       message: "Service restarted successfully"
 
 rollback:
@@ -123,7 +106,7 @@ success_actions:
     action: post_message
     parameters:
       channel: "#incidents"
-      message: "✅ ${service} restarted successfully"
+      message: "✅ ${service} restarted successfully in ${namespace} namespace"
   
   - name: update_final_status
     type: internal

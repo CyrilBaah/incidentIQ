@@ -48,3 +48,4 @@ except Exception as e:
             print("\n💡 Tip: Gemini free tier = 20 requests/day. Check usage at: https://ai.dev/rate-limit")
     else:
         print(f"❌ Test failed: {e}")
+        
